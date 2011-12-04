@@ -50,6 +50,11 @@ ttfm.on('newsong', function(data) {
     }
 });
 
+ttfm.on('ready', function() {
+    ttfm.modifyLaptop('chrome');
+    ttfm.setAvatar(5);
+});
+
 ttfm.on('speak', function(data) {
     if (data) {
         DB.DJ.IsAdmin(data.userid, function(err, admin) {
@@ -65,7 +70,7 @@ ttfm.on('speak', function(data) {
                     }
                     // handle valid commands
                     switch(command) {
-                        // admin management
+                        // admins
                         case 'sa':
                         case 'setadmin':
                             SetAdmin(param);
@@ -75,9 +80,34 @@ ttfm.on('speak', function(data) {
                             DeleteAdmin(param);
                             break;
 
-                        // queue management
+                        // djing
+                        case 'booth':
+                            ttfm.addDj();
+                            break;
+                        case 'floor':
+                            ttfm.remDj(process.env.TTFMBOT_USER_ID);
+                            break;
+                        case 'skip':
+                            ttfm.stopSong();
+                            break;
+                            
+                        // fans
+                        case 'fan':
+                            SetFan(param);
+                            break;
+                        case 'unfan':
+                            DeleteFan(param);
+                            break;
+                            
+                        // queue
                         case 'snag':
-                            ttfm.snag();
+                            ttfm.snag(function(data) {
+                                if (data.success) {
+                                    ttfm.speak('Song added to queue.');
+                                } else {
+                                    LogError('Unable to add song to queue.');
+                                }
+                            });
                             break;
 
                         // voting
@@ -128,6 +158,48 @@ function SetAdmin(name) {
                             LogError(err);
                         } else {
                             ttfm.speak(u.name + ' added as an admin.');
+                        }
+                    });
+                    return;
+                }
+            }
+        }
+        LogError('Unable to locate user Id for ' + name + '.');
+    });
+}
+
+function DeleteFan(name) {
+    ttfm.roomInfo(true, function(info) {
+        if (info.users) {
+            for (i in info.users) {
+                var u = info.users[i];
+                if (u.name.toLowerCase() == name) {
+                    ttfm.removeFan(u.userid, function(data) {
+                        if (data.success) {
+                            ttfm.speak('/me is no longer a fan of ' + u.name + '.');
+                        } else {
+                            LogError('Unable to unfan ' + u.name + '.');
+                        }
+                    });
+                    return;
+                }
+            }
+        }
+        LogError('Unable to locate user Id for ' + name + '.');
+    });
+}
+
+function SetFan(name) {
+    ttfm.roomInfo(true, function(info) {
+        if (info.users) {
+            for (i in info.users) {
+                var u = info.users[i];
+                if (u.name.toLowerCase() == name) {
+                    ttfm.becomeFan(u.userid, function(data) {
+                        if (data.success) {
+                            ttfm.speak('/me became a fan of ' + u.name + '.');
+                        } else {
+                            LogError('Unable to become a fan of ' + u.name + '.');
                         }
                     });
                     return;
