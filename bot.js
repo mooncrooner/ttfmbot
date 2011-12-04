@@ -1,6 +1,7 @@
 var Bot = require('ttapi');
 var DB = require('./db.js');
 var adminId = process.env.TTFMBOT_ADMIN_ID;
+var autoBop = false;
 var currentPlayId;
 var ttfm = new Bot(
     process.env.TTFMBOT_USER_AUTH,
@@ -8,51 +9,13 @@ var ttfm = new Bot(
     process.env.TTFMBOT_ROOM_ID);
 
 ttfm.on('newsong', function(data) {
-    if (data.success) {
-        ttfm.getProfile(data.room.metadata.current_dj, function(profile) {
-            if (profile) {
-                var isAdmin = false;
-                if (profile.userid == adminId) { isAdmin = true; }
-                DB.DJ.Add(profile.userid, profile.name, profile.created, isAdmin, function(err, dj) {
-                    LogError(err);
-                    var songTT = data.room.metadata.current_song;
-                    DB.Artist.Add(songTT.metadata.artist, function(err, artist) {
-                        LogError(err);
-                        if (artist) {
-                            DB.Song.Add(
-                                songTT.metadata.album,
-                                artist,
-                                songTT.metadata.coverart,
-                                songTT.metadata.song,
-                                function(err, song) {
-                                    LogError(err);
-                                    if (dj && song) {
-                                        DB.Play.Add(
-                                            dj,
-                                            data.room.metadata.downvotes,
-                                            data.room.metadata.listeners,
-                                            song,
-                                            songTT.starttime,
-                                            data.room.metadata.upvotes,
-                                            function(err, play) {
-                                                LogError(err);
-                                                currentPlayId = play._id;
-                                            }
-                                        );
-                                    }
-                                }
-                            );
-                        }
-                    });
-                });
-            }
-        });
-    }
+    currentPlayId = null;
+    if (autoBop) { ttfm.vote('up'); }
+    if (data.success) { PopulateCurrent(data); }
 });
 
-ttfm.on('ready', function() {
-    ttfm.modifyLaptop('chrome');
-    ttfm.setAvatar(5);
+ttfm.on('nosong', function(data) {
+    if (data.success) { currentPlayId = null; }
 });
 
 ttfm.on('speak', function(data) {
@@ -90,7 +53,7 @@ ttfm.on('speak', function(data) {
                         case 'skip':
                             ttfm.stopSong();
                             break;
-                            
+
                         // fans
                         case 'fan':
                             SetFan(param);
@@ -98,12 +61,18 @@ ttfm.on('speak', function(data) {
                         case 'unfan':
                             DeleteFan(param);
                             break;
-                            
+
                         // queue
                         case 'snag':
-                            ttfm.snag(function(data) {
-                                if (data.success) {
-                                    ttfm.speak('Song added to queue.');
+                            ttfm.roomInfo(function(data) {
+                                if (data.room.metadata.current_song._id) {
+                                    ttfm.playlistAdd(data.room.metadata.current_song._id, function(data) {
+                                        if (data.success) {
+                                            ttfm.speak('Song added to queue.');
+                                        } else {
+                                            LogError('Unable to add song to queue.');
+                                        }
+                                    });
                                 } else {
                                     LogError('Unable to add song to queue.');
                                 }
@@ -125,6 +94,65 @@ ttfm.on('speak', function(data) {
         });
     }
 });
+
+ttfm.on('update_votes', function(data) {
+    // if we've already handled creating the necessary db entries, just update vote data
+    if (currentPlayId && data.success) {
+        DB.Play.UpdateVotes(
+            currentPlayId,
+            data.room.metadata.downvotes,
+            data.room.metadata.listeners,
+            data.room.metadata.upvotes,
+            function(err) { LogError(err); }
+        );
+    // otherwise, make sure we have all valid db entries
+    } else {
+        ttfm.roomInfo(true, function(info) {
+            if (info.success) { PopulateCurrent(info); }
+        });
+    }
+});
+
+function PopulateCurrent(data) {
+    ttfm.getProfile(data.room.metadata.current_dj, function(profile) {
+        if (profile) {
+            var isAdmin = false;
+            if (profile.userid == adminId) { isAdmin = true; }
+            DB.DJ.Add(profile.userid, profile.name, profile.created, isAdmin, function(err, dj) {
+                LogError(err);
+                var songTT = data.room.metadata.current_song;
+                DB.Artist.Add(songTT.metadata.artist, function(err, artist) {
+                    LogError(err);
+                    if (artist) {
+                        DB.Song.Add(
+                            songTT.metadata.album,
+                            artist,
+                            songTT.metadata.coverart,
+                            songTT.metadata.song,
+                            function(err, song) {
+                                LogError(err);
+                                if (dj && song) {
+                                    DB.Play.Add(
+                                        dj,
+                                        data.room.metadata.downvotes,
+                                        data.room.metadata.listeners,
+                                        song,
+                                        songTT.starttime,
+                                        data.room.metadata.upvotes,
+                                        function(err, play) {
+                                            LogError(err);
+                                            currentPlayId = play._id;
+                                        }
+                                    );
+                                }
+                            }
+                        );
+                    }
+                });
+            });
+        }
+    });
+}
 
 function DeleteAdmin(name) {
     ttfm.roomInfo(true, function(info) {
@@ -211,7 +239,5 @@ function SetFan(name) {
 }
 
 function LogError(err) {
-    if (err) {
-        ttfm.speak(err);
-    }
+    if (err) { ttfm.speak(err); }
 }

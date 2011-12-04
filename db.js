@@ -103,6 +103,19 @@ Play.statics.Add = function(dj, downs, listeners, song, starttime, ups, cb) {
     });
 };
 
+Play.statics.UpdateVotes = function(id, downs, listeners, ups, cb) {
+    this.findOne({ _id: id }, function(err, data) {
+        if (data) {
+            data.downs = downs;
+            data.listeners = listeners;
+            data.ups = ups;
+            data.save(function(err) { cb(err); });
+        } else {
+            cb(err);
+        }
+    });
+};
+
 Song.statics.Add = function(album, artist, coverart, title, cb) {
     if (album) { album = album.trim(); }
     if (title) { title = title.trim(); }
