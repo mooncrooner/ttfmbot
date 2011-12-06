@@ -1,16 +1,20 @@
 var Bot = require('ttapi');
+var Config = require('./config.js');
 var DB = require('./db.js');
-var adminId = process.env.TTFMBOT_ADMIN_ID;
-var autoBop = false;
 var currentPlayId;
 var ttfm = new Bot(
-    process.env.TTFMBOT_USER_AUTH,
-    process.env.TTFMBOT_USER_ID,
-    process.env.TTFMBOT_ROOM_ID);
+    Config.BotAuth,
+    Config.BotId,
+    Config.BotRoom);
 
+ttfm.on('add_dj', function(data) {
+    AutoDJCheck();
+});
+    
 ttfm.on('newsong', function(data) {
     currentPlayId = null;
-    if (autoBop) { ttfm.vote('up'); }
+    AutoDJCheck();
+    if (Config.AutoBop) { ttfm.vote('up'); }
     if (data.success) { PopulateCurrent(data); }
 });
 
@@ -18,11 +22,19 @@ ttfm.on('nosong', function(data) {
     if (data.success) { currentPlayId = null; }
 });
 
+ttfm.on('ready', function() {
+    AutoDJCheck();
+});
+
+ttfm.on('rem_dj', function(data) {
+    AutoDJCheck();
+});
+
 ttfm.on('speak', function(data) {
     if (data) {
         DB.DJ.IsAdmin(data.userid, function(err, admin) {
             LogError(err);
-            if (data.userid == adminId || admin) {
+            if (data.userid == Config.AdminId || admin) {
                 var result = data.text.match(/^\/(.*?)( .*)?$/);
                 if (result) {
                     // break out the command and parameter if one exists
@@ -43,12 +55,21 @@ ttfm.on('speak', function(data) {
                             DeleteAdmin(param);
                             break;
 
+                        case 'autobop':
+                            Config.AutoBop = !Config.AutoBop;
+                            ttfm.speak('Auto-Bop set to ' + Config.AutoBop + '.');
+                            break;
+                            
                         // djing
+                        case 'autodj':
+                            Config.AutoDJ = !Config.AutoDJ;
+                            ttfm.speak('Auto-DJing set to ' + Config.AutoDJ + '.');
+                            break;
                         case 'booth':
                             ttfm.addDj();
                             break;
                         case 'floor':
-                            ttfm.remDj(process.env.TTFMBOT_USER_ID);
+                            ttfm.remDj(Config.BotId);
                             break;
                         case 'skip':
                             ttfm.stopSong();
@@ -113,17 +134,42 @@ ttfm.on('update_votes', function(data) {
     }
 });
 
+function AutoDJCheck() {
+    ttfm.roomInfo(false, function(data) {
+        if (data.success) {
+            // hop in the booth if we're auto-djing and requirements have been met
+            if (Config.AutoDJ
+                && data.room.metadata.djcount <= Config.AutoDJMin
+                && (!data.room.metadata.djs || data.room.metadata.djs.indexOf(Config.BotId) < 0)) {
+                if (Config.AutoDJEnterMessage) { ttfm.speak(Config.AutoDJEnterMessage); }
+                ttfm.addDj();
+            // otherwise, hop out if we're not currently playing a song and requirements have been met
+            } else if (data.room.metadata.current_dj
+                && data.room.metadata.current_dj != Config.BotId
+                && data.room.metadata.djs
+                && data.room.metadata.djs.indexOf(Config.BotId) != -1
+                && data.room.metadata.djcount >= Config.AutoDJMax) {
+                if (Config.AutoDJExitMessage) { ttfm.speak(Config.AutoDJExitMessage); }                
+                ttfm.remDj(Config.BotId);
+            }
+        }
+    });
+}
+
 function PopulateCurrent(data) {
     ttfm.getProfile(data.room.metadata.current_dj, function(profile) {
         if (profile) {
             var isAdmin = false;
-            if (profile.userid == adminId) { isAdmin = true; }
+            if (profile.userid == Config.AdminId) { isAdmin = true; }
+            // try to add or retrieve dj info
             DB.DJ.Add(profile.userid, profile.name, profile.created, isAdmin, function(err, dj) {
                 LogError(err);
                 var songTT = data.room.metadata.current_song;
+                // try to add or retrieve artist info
                 DB.Artist.Add(songTT.metadata.artist, function(err, artist) {
                     LogError(err);
                     if (artist) {
+                        // if we were able to get the artist, try to add or get the song
                         DB.Song.Add(
                             songTT.metadata.album,
                             artist,
@@ -131,6 +177,8 @@ function PopulateCurrent(data) {
                             songTT.metadata.song,
                             function(err, song) {
                                 LogError(err);
+                                // if we successfully added or retrieved dj and song entries
+                                // then add the play entry
                                 if (dj && song) {
                                     DB.Play.Add(
                                         dj,
