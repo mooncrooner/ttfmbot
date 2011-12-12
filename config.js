@@ -2,7 +2,7 @@
 exports.AdminId = process.env.TTFMBOT_ADMIN_ID;
 
 // whether or not the bot should auto-awesome every song played
-exports.AutoBop = false;
+exports.AutoBop = true;
 
 // whether or not dj automation should be on
 exports.AutoDJ = true;

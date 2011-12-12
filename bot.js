@@ -6,16 +6,33 @@ var ttfm = new Bot(
     Config.BotAuth,
     Config.BotId,
     Config.BotRoom);
+    
+var activeDJs = {};
 
 ttfm.on('add_dj', function(data) {
+    if (data.success) {
+        // update our active DJs list
+        if (activeDJs && activeDJs.hasOwnProperty(data.user.userid)) {
+            AFKDJUpdate(data.user.userid);
+            //$ checks for play limit and queue bypassing attempts will go here
+        } else {
+            AddActiveDJ(data.user.userid);
+        }
+    }
     AutoDJCheck();
 });
     
 ttfm.on('newsong', function(data) {
     currentPlayId = null;
     AutoDJCheck();
-    if (Config.AutoBop) { ttfm.vote('up'); }
-    if (data.success) { PopulateCurrent(data); }
+    AutoBopCheck();
+    if (data.success) {
+        PopulateCurrent(data);
+        
+        if (activeDJs.hasOwnProperty(data.room.metadata.current_dj)) {
+            activeDJs[data.room.metadata.current_dj].plays++;
+        }
+    }
 });
 
 ttfm.on('nosong', function(data) {
@@ -23,15 +40,26 @@ ttfm.on('nosong', function(data) {
 });
 
 ttfm.on('ready', function() {
+    AutoBopCheck();
+    // populate active DJs
+    ttfm.roomInfo(false, function(info) {
+        if (info.success) {
+            var djs = info.room.metadata.djs;
+            for (i in djs) {
+                AddActiveDJ(djs[i]);
+            }
+        }
+    });
     AutoDJCheck();
 });
 
-ttfm.on('rem_dj', function(data) {
+ttfm.on('rem_dj', function(data) {    
     AutoDJCheck();
 });
 
 ttfm.on('speak', function(data) {
     if (data) {
+        AFKDJUpdate(data.userid);
         DB.DJ.IsAdmin(data.userid, function(err, admin) {
             LogError(err);
             if (data.userid == Config.AdminId || admin) {
@@ -117,6 +145,12 @@ ttfm.on('speak', function(data) {
 });
 
 ttfm.on('update_votes', function(data) {
+    if (data.success) {
+        var votes = data.room.metadata.votelog;
+        for (i in votes) {
+            AFKDJUpdate(votes[i][0]);
+        }        
+    }
     // if we've already handled creating the necessary db entries, just update vote data
     if (currentPlayId && data.success) {
         DB.Play.UpdateVotes(
@@ -133,6 +167,26 @@ ttfm.on('update_votes', function(data) {
         });
     }
 });
+
+function AddActiveDJ(userid) {
+    if (userid) {
+        activeDJs[userid] = {
+            lastActive: new Date(),
+            plays: 0,
+            removed: null
+        };
+    }
+}
+
+function AFKDJUpdate(userid) {
+    if (activeDJs && userid && activeDJs.hasOwnProperty(userid)) {
+        activeDJs[userid].lastActive = new Date();
+    }
+}
+
+function AutoBopCheck() {
+    if (Config.AutoBop) { ttfm.vote('up'); }
+}
 
 function AutoDJCheck() {
     ttfm.roomInfo(false, function(data) {
