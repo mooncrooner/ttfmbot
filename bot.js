@@ -124,7 +124,7 @@ ttfm.on('speak', function(data) {
                             break;
 
                         // queue
-                        case 'snag
+                        case 'snag':
                             //$ need to change this to add songs to end of queue instead of beginning
                             ttfm.roomInfo(function(data) {
                                 if (data.room.metadata.current_song._id) {
