@@ -14,14 +14,18 @@ ttfm.on('add_dj', function(data) {
         // update our active DJs list
         if (activeDJs && activeDJs.hasOwnProperty(data.user.userid)) {
             AFKDJUpdate(data.user.userid);
-            //$ checks for play limit and queue bypassing attempts will go here
+            //$ checks for rate limit, play limit and queue bypassing attempts will go here
         } else {
             AddActiveDJ(data.user.userid);
         }
     }
     AutoDJCheck();
 });
-    
+
+ttfm.on('endsong', function() {
+    if (Config.BoothEnforce) EnforceBooth();
+});
+
 ttfm.on('newsong', function(data) {
     currentPlayId = null;
     AutoDJCheck();
@@ -53,7 +57,10 @@ ttfm.on('ready', function() {
     AutoDJCheck();
 });
 
-ttfm.on('rem_dj', function(data) {    
+ttfm.on('rem_dj', function(data) {
+    if (data.success) {
+        RemoveActiveDJ(data.user.userid);
+    }
     AutoDJCheck();
 });
 
@@ -87,7 +94,12 @@ ttfm.on('speak', function(data) {
                             Config.AutoBop = !Config.AutoBop;
                             ttfm.speak('Auto-Bop set to ' + Config.AutoBop + '.');
                             break;
-                            
+                        
+                        case 'enforce':
+                            Config.BoothEnforce = !Config.BoothEnforce;
+                            ttfm.speak('Booth enforcement set to ' + Config.BoothEnforce + '.');
+                            break;
+                        
                         // djing
                         case 'autodj':
                             Config.AutoDJ = !Config.AutoDJ;
@@ -112,7 +124,8 @@ ttfm.on('speak', function(data) {
                             break;
 
                         // queue
-                        case 'snag':
+                        case 'snag
+                            //$ need to change this to add songs to end of queue instead of beginning
                             ttfm.roomInfo(function(data) {
                                 if (data.room.metadata.current_song._id) {
                                     ttfm.playlistAdd(data.room.metadata.current_song._id, function(data) {
@@ -178,6 +191,12 @@ function AddActiveDJ(userid) {
     }
 }
 
+function RemoveActiveDJ(userid) {
+    if (activeDJs && userid && activeDJs.hasOwnProperty(userid)) {
+        activeDJs[userid].removed = new Date();
+    }
+}
+
 function AFKDJUpdate(userid) {
     if (activeDJs && userid && activeDJs.hasOwnProperty(userid)) {
         activeDJs[userid].lastActive = new Date();
@@ -208,6 +227,30 @@ function AutoDJCheck() {
             }
         }
     });
+}
+
+function EnforceBooth() {
+    if (Config.BoothIdleLimit > 0) {
+        // convert idle time to milliseconds
+        var limit = Config.BoothIdleLimit * 60000;
+        var now = new Date();
+        for (var i in activeDJs) {            
+            if ((now - activeDJs[i].lastActive) > limit) {
+                activeDJs[i].removed = now;
+                ttfm.remDj(i);
+                if (Config.BoothIdleLimitMessage) ttfm.speak(Config.BoothIdleLimitMessage);
+            }
+        }
+    }
+    if (Config.BoothSongLimit > 0) {
+        for (var i in activeDJs) {
+            if (activeDJs[i].plays >= Config.BoothSongLimit) {
+                activeDJs[i].removed = now;
+                ttfm.remDj(i);
+                if (Config.BoothSongLimitMessage) ttfm.speak(Config.BoothSongLimitMessage);
+            }
+        }
+    }
 }
 
 function PopulateCurrent(data) {
