@@ -2,10 +2,10 @@
 exports.AdminId = process.env.TTFMBOT_ADMIN_ID;
 
 // whether or not the bot should auto-awesome every song played
-exports.AutoBop = true;
+exports.AutoBop = false;
 
 // whether or not dj automation should be on
-exports.AutoDJ = true;
+exports.AutoDJ = false;
 // what the bot should say before entering the booth, null if you want nothing to be said
 exports.AutoDJEnterMessage = 'Looks like you folks could use another DJ!';
 // what the bot should say before exiting the booth, null if you want nothing to be said

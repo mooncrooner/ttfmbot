@@ -125,20 +125,10 @@ ttfm.on('speak', function(data) {
 
                         // queue
                         case 'snag':
-                            //$ need to change this to add songs to end of queue instead of beginning
-                            ttfm.roomInfo(function(data) {
-                                if (data.room.metadata.current_song._id) {
-                                    ttfm.playlistAdd(data.room.metadata.current_song._id, function(data) {
-                                        if (data.success) {
-                                            ttfm.speak('Song added to queue.');
-                                        } else {
-                                            LogError('Unable to add song to queue.');
-                                        }
-                                    });
-                                } else {
-                                    LogError('Unable to add song to queue.');
-                                }
-                            });
+                            QueueTrack();
+                            break;
+                        case 'removelast':
+                            DequeueLast();
                             break;
 
                         // voting
@@ -383,6 +373,64 @@ function SetFan(name) {
     });
 }
 
+function QueueTrack() {
+    ttfm.roomInfo(function(roomInfo) {
+        if (roomInfo.room.metadata.current_song._id) {
+            ttfm.playlistAll(function(playlistAll) {
+                if (playlistAll.success) {
+                    if (playlistAll.list) {
+                        ttfm.playlistAdd(
+                            roomInfo.room.metadata.current_song._id,
+                            playlistAll.list.length - 1, // index of the last item
+                            function(playlistAdd) {
+                                if (playlistAdd.success) {
+                                    ttfm.speak('Song added to queue.');
+                                } else {
+                                    LogError('Unable to add song to queue.');
+                                }
+                            });
+                    } else {
+                        LogError('Unable to add song to queue.');
+                    }
+                } else {
+                    LogError('Unable to add song to queue.');
+                }
+            });
+        } else {                                
+            LogError('Unable to add song to queue.');
+        }
+    });
+}
+
+function DequeueLast() {
+    ttfm.playlistAll(function(playlistAll) {
+        if (playlistAll.success) {
+            if (playlistAll.list) {
+                if (playlistAll.list.length == 0) {
+                    ttfm.speak('Queue is empty.');
+                } else {                
+                    ttfm.playlistRemove(
+                        playlistAll.list.length - 1, // index of the last item
+                        function(playlistRemove) {
+                            if (playlistRemove.success) {
+                                ttfm.speak('Last song in queue removed.');
+                            } else {
+                                LogError('Unable to remove last song in queue.');
+                            }
+                        });
+                }
+            } else {
+                LogError('Unable to remove last song in queue.');
+            }
+        } else {
+            LogError('Unable to remove last song in queue.');
+        }
+    });
+}
+
 function LogError(err) {
-    if (err) { ttfm.speak(err); }
+    if (err) {
+        console.log(err);
+        ttfm.speak(err);
+    }
 }
